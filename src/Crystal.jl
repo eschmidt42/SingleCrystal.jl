@@ -127,4 +127,29 @@ function simple_find_neighbours(s::MinimalSimulationConfig,
     return neighbours
 end
 
+function get_distance_df(atoms, box_size, coords; 
+        initial_neighbours=Tuple{Int,Int}[],
+        dist_cutoff=2
+    )
+    s = MinimalSimulationConfig(atoms, box_size, coords, initial_neighbours)
+    n_atoms = length(atoms)
+    nb_matrix = trues(n_atoms,n_atoms)
+    n_steps = 1
+    nf = MyNeighbourFinder(nb_matrix, n_steps, dist_cutoff)
+    idxs = simple_find_neighbours(s, nf, 1)
+    rs = [sqrt(sum(abs2, vector(s.coords[i], s.coords[j], s.box_size)))
+        for (i,j) in idxs
+    ]
+    rs_df = sort(combine(groupby(DataFrame("distances"=>rs),[:distances]), 
+ row=>:count), [:distances])
+    return rs_df
+end
+
+function plot_distance_hist(rs::Array, title::String, cutoff)
+    histogram(rs, xlabel=L"r", ylabel="Frequency", 
+        title=string(title, ": euclidan (periodic) distance distribution (rcut ",cutoff,")"),
+        bins=200,
+    )
+end
+
 end # module
