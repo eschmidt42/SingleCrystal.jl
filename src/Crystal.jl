@@ -141,7 +141,7 @@ function get_distance_df(atoms, box_size, coords;
         for (i,j) in idxs
     ]
     rs_df = sort(combine(groupby(DataFrame("distances"=>rs),[:distances]), 
- row=>:count), [:distances])
+ nrow=>:count), [:distances])
     return rs_df
 end
 
