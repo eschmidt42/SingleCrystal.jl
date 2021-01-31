@@ -101,6 +101,8 @@ struct MyNeighbourFinder <: NeighbourFinder
     rcut2::Float32
 end
 
+MyNeighbourFinder(nb_matrix, n_steps, dist_cutoff) = MyNeighbourFinder(nb_matrix, n_steps, dist_cutoff, dist_cutoff^2)
+
 function simple_find_neighbours(s::MinimalSimulationConfig,
         nf::MyNeighbourFinder, step_n::Int;
         parallel::Bool=false, 
