@@ -1,6 +1,15 @@
 using Crystal
 using Test
 
+@testset "vacancy" begin
+    element = "Fe"
+    a = 1
+    atoms, coords, box, box_size, box_vectors = Crystal.make_fcc_unitcell(element, a=a)
+    vac_atoms, vac_coords = Crystal.add_vacancies(atoms, coords, ixs=[1])
+    @test length(vac_atoms) == length(vac_coords)
+    @test length(vac_atoms) == length(atoms) - 1
+end
+
 @testset "fcc" begin
     element = "Fe"
     a = 1

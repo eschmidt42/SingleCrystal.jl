@@ -7,6 +7,7 @@ using Test
 using LaTeXStrings
 using LinearAlgebra
 using SparseArrays
+using Random
 
 masses = Dict("V" => 50.9415, "Nb" => 92.9064, "Ta" => 180.9479,
               "Cr" => 51.996, "Mo" => 95.94, "W" => 183.85,
@@ -33,6 +34,21 @@ function make_bcc_unitcell(element::String;a::T=1) where T <:Real
     box = box_vectors * box_size
     coords = [v*box for v in coords]
     return atoms, coords, box, box_size, box_vectors
+end
+
+function add_vacancies(
+        atoms, coords;
+        ixs::Array{Int64}=[2],
+        random::Bool=false, 
+        n_vac::Int64=1, 
+    )
+    n_atoms = length(atoms)
+    if random == true
+        ixs = rand(1:n_atoms, n_vac)
+    end
+    atoms_vac = [atoms[i] for i in 1:n_atoms if !(i in ixs)]
+    coords_vac = [coords[i] for i in 1:n_atoms if !(i in ixs)]
+    return atoms_vac, coords_vac
 end
 
 function make_supercell(atoms::Array, coords::Array, 
