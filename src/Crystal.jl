@@ -1,7 +1,6 @@
 module Crystal
 
 using DataFrames
-using Molly
 using Plots
 using Test
 using LaTeXStrings
@@ -13,11 +12,19 @@ masses = Dict("V" => 50.9415, "Nb" => 92.9064, "Ta" => 180.9479,
               "Cr" => 51.996, "Mo" => 95.94, "W" => 183.85,
               "Fe" => 55.847)
 
-function make_fcc_unitcell(element::String;a::T=1) where T <:Real
-    coords = [[0 0 0],[1//2 1//2 0],
-        [1//2 0 1//2],[0 1//2 1//2]]
-    atoms = [Atom(name=element, mass=masses[element]) 
-             for _ in coords]
+struct Atom{T}
+    name::String
+    mass::T
+end
+
+function Atom(;name::String="dummy",mass::T=42) where T<:Real
+    return Atom{typeof(mass)}(name, mass)
+end
+
+function make_fcc_unitcell(elements::Array{String};a::T=1,el2atom_map::Dict) where T <:Real
+    coords = [[0 0 0],[1//2 1//2 0],[1//2 0 1//2],[0 1//2 1//2]]
+    @assert length(elements) == length(coords) "This function generates a fcc unit cell with $(length(coords)) atoms, so 4 strings are required but got $(elements)"
+    atoms = [el2atom_map[el] for el in elements]
     box_size = Diagonal([a, a, a])
     box_vectors = [1. 0. 0.; 0. 1. 0.; 0. 0. 1.]
     box = box_vectors * box_size
@@ -25,10 +32,10 @@ function make_fcc_unitcell(element::String;a::T=1) where T <:Real
     return atoms, coords, box, box_size, box_vectors
 end
 
-function make_bcc_unitcell(element::String;a::T=1) where T <:Real
+function make_bcc_unitcell(elements::Array{String};a::T=1,el2atom_map::Dict) where T <:Real
     coords =[[0 0 0], [.5 .5 .5]]
-    atoms = [Atom(name=element, mass=masses[element]) 
-             for _ in coords]
+    @assert length(elements) == length(coords) "This function generates a bcc unit cell with $(length(coords)) atoms, so 4 strings are required but got $(elements)"
+    atoms = [el2atom_map[el] for el in elements]
     box_size = Diagonal([a, a, a])
     box_vectors = [1. 0. 0.; 0. 1. 0.; 0. 0. 1.]
     box = box_vectors * box_size
@@ -37,11 +44,11 @@ function make_bcc_unitcell(element::String;a::T=1) where T <:Real
 end
 
 function add_vacancies(
-        atoms, coords;
-        ixs::Array{Int64}=[2],
+        atoms::Array, coords::Array;
+        ixs::Array{I}=[2],
         random::Bool=false, 
-        n_vac::Int64=1, 
-    )
+        n_vac::I=1, 
+    ) where {I <: Integer}
     n_atoms = length(atoms)
     if random == true
         ixs = rand(1:n_atoms, n_vac)
@@ -52,8 +59,8 @@ function add_vacancies(
 end
 
 function make_supercell(atoms::Array, coords::Array, 
-        box::Array, box_size::Diagonal; nx::Int64=1, ny::Int64=1,
-        nz::Int64=1)
+        box::Array, box_size::Diagonal; nx::I=1, ny::I=1,
+        nz::I=1) where {I <: Integer}
     @assert (nx > 0) & (ny > 0) & (nz > 0) 
     sc_atoms = []
     sc_coords = []
@@ -110,17 +117,27 @@ mutable struct MinimalSimulationConfig
     neighbours::Array{Tuple{Int64,Int64}}
 end
 
-struct MyNeighbourFinder <: NeighbourFinder
+struct NeighbourFinder 
     nb_matrix::BitArray{2} # defines which atom pairs we'll be happy to check at all
     n_steps::Int
     dist_cutoff::Float32
     rcut2::Float32
 end
 
-MyNeighbourFinder(nb_matrix, n_steps, dist_cutoff) = MyNeighbourFinder(nb_matrix, n_steps, dist_cutoff, dist_cutoff^2)
+NeighbourFinder(nb_matrix, n_steps, dist_cutoff) = NeighbourFinder(nb_matrix, n_steps, dist_cutoff, dist_cutoff^2)
+
+function vector1D(c1::Real, c2::Real, box_size::Real)
+    if c1 < c2
+        return (c2 - c1) < (c1 - c2 + box_size) ? (c2 - c1) : (c2 - c1 - box_size)
+    else
+        return (c1 - c2) < (c2 - c1 + box_size) ? (c2 - c1) : (c2 - c1 + box_size)
+    end
+end
+
+vector(c1, c2, box_size::Real) = vector1D.(c1, c2, box_size)
 
 function simple_find_neighbours(s::MinimalSimulationConfig,
-        nf::MyNeighbourFinder, step_n::Int;
+        nf::NeighbourFinder, step_n::Int;
         parallel::Bool=false, 
         x_shifts=[0], y_shifts=[0], z_shifts=[0] # factors by which the box will be shifted along each box vector
     )
@@ -151,7 +168,7 @@ function get_distance_df(atoms, box_size, coords;
     n_atoms = length(atoms)
     nb_matrix = trues(n_atoms,n_atoms)
     n_steps = 1
-    nf = MyNeighbourFinder(nb_matrix, n_steps, dist_cutoff)
+    nf = NeighbourFinder(nb_matrix, n_steps, dist_cutoff)
     idxs = simple_find_neighbours(s, nf, 1)
     rs = [sqrt(sum(abs2, vector(s.coords[i], s.coords[j], s.box_size)))
         for (i,j) in idxs
