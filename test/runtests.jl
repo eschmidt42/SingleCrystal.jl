@@ -1,27 +1,109 @@
 using Crystal
 using Test
+using LinearAlgebra
+using DataFrames
 
-@testset "bcc->unit cell->super cell->vacancy" begin
+@testset "unit cell->super cell->vacancy" begin
     element = "Fe"
     mass = 42.
     el2atom_map = Dict(element => Crystal.Atom(name=element, mass=mass))
     a = 2.9
-    unitcell = Crystal.make_bcc_unitcell([element for _ in 1:2], a, el2atom_map)
-    # test that unitcell.box approx 2.9*I(3)
-    # test that edge_lengths approx 2.9*ones(3)
-    @test length(unitcell.coords) == length(unitcell.atoms)
-    @test length(unitcell.coords) == 2
-
-    supercell = Crystal.make_supercell(unitcell, nx=2, ny=3, nz=4)
-    @test length(supercell.coords) == length(supercell.atoms)
-    @test length(supercell.coords) == 2*2*3*4
-    # test supercell box x = nx * unitcell box x
-    # test supercell box y = ny * unitcell box y
-    # test supercell box z = nz * unitcell box z
-
-    vac = Crystal.add_vacancies(supercell, ixs=[1])
-    @test length(vac.coords) == length(supercell.coords) - 1
+    nx, ny, nz = 2, 3, 4
+    for b in ["fcc", "bcc"]
+        if b == "fcc"
+            elements = [element for _ in 1:4]
+        elseif b == "bcc"
+            elements = [element for _ in 1:2]
+        end
+        @testset "$(b)" begin
+            
+            unitcell = Crystal.make_unitcell(elements, a, el2atom_map, b)
+            @test unitcell.box.M ≈ a*I(3)
+            @test unitcell.edge_lengths ≈ a*ones(3)
+            @test length(unitcell.coords) == length(unitcell.atoms)
+            @test length(unitcell.coords) == length(elements)
+        
+            supercell = Crystal.make_supercell(unitcell, nx=nx, ny=ny, nz=nz)
+            @test length(supercell.coords) == length(supercell.atoms)
+            @test length(supercell.coords) == length(elements)*2*3*4
+            @test supercell.box.M[1,1] ≈ nx * unitcell.box.M[1,1]
+            @test supercell.box.M[2,2] ≈ ny * unitcell.box.M[2,2]
+            @test supercell.box.M[3,3] ≈ nz * unitcell.box.M[3,3]
+        
+            vac = Crystal.add_vacancies(supercell, ixs=[1])
+            @test length(vac.coords) == length(supercell.coords) - 1
+        end
+    end
 end
+
+struct NeighbourFinder 
+    nb_matrix::BitArray{2} # defines which atom pairs we'll be happy to check at all
+    dist_cutoff::Float32
+    rcut2::Float32
+end
+
+NeighbourFinder(nb_matrix, dist_cutoff) = NeighbourFinder(nb_matrix, dist_cutoff, dist_cutoff^2)
+
+function find_neighbours(cell::Crystal.Cell, nf::NeighbourFinder)
+    neighbours = []
+    rs = []
+    for i in 1:length(cell.coords)
+        ci = cell.coords[i]
+        for j in 1:length(cell.coords)
+            if i==j 
+                continue
+            end
+            
+            r2 = sum(abs2, Crystal.vector(ci, cell.coords[j], cell.edge_lengths))
+            if r2 <= nf.rcut2 && nf.nb_matrix[j,i]
+                push!(neighbours, (i,j))
+                push!(rs, sqrt(r2))
+            end                
+        end
+    end
+    return neighbours, rs
+end
+
+function get_distance_df(cell::Crystal.Cell; dist_cutoff::Real=2)
+    n_atoms = length(cell.atoms)
+    nb_matrix = trues(n_atoms,n_atoms)
+    nf = NeighbourFinder(nb_matrix, dist_cutoff)
+    idxs, rs = find_neighbours(cell, nf)
+    rs_df = sort(combine(groupby(DataFrame("distances"=>rs),[:distances]), 
+ nrow=>:count), [:distances])
+    return rs_df, rs
+end
+
+@testset "Neighbours" begin
+    
+    d = 2
+    el = "Fe"
+    el2atom_map = Dict(el => Crystal.Atom(name=el, mass=1))
+
+    @testset "bcc" begin
+        unitcell = Crystal.make_bcc_unitcell([el for _ in 1:2], 1, el2atom_map)
+        supercell = Crystal.make_supercell(unitcell, nx=3, ny=3, nz=3)
+        rs_df, rs = get_distance_df(supercell, dist_cutoff=d)
+        @test rs_df.distances[1] ≈ sqrt((sqrt(2)/2)^2 + 1/2^2)
+        @test rs_df.distances[2] ≈ 1
+        @test rs_df.distances[3] ≈ sqrt(2)
+        @test rs_df.distances[4] ≈ sqrt((sqrt(2)/2)^2 + (3/2)^2)
+        @test rs_df.distances[5] ≈ sqrt(sqrt(2)^2 + 1^2)
+    end
+
+    @testset "fcc" begin
+        unitcell = Crystal.make_fcc_unitcell([el for _ in 1:4], 1, el2atom_map)
+        supercell = Crystal.make_supercell(unitcell, nx=3, ny=3, nz=3)
+        rs_df, rs = get_distance_df(supercell, dist_cutoff=d)
+        @test rs_df.distances[1] ≈ sqrt(1^2+1^2)/2
+        @test rs_df.distances[2] ≈ 1
+        @test rs_df.distances[3] ≈ sqrt(1^2+(sqrt(2)/2)^2)
+        @test rs_df.distances[4] ≈ sqrt(1^2+1^2)
+        @test rs_df.distances[5] ≈ sqrt(3^2+1^2)/2
+    end
+end
+
+
 # sanity check first, second and higher nearest neighbours for edge lengths = 1
 
 #=
