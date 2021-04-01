@@ -54,18 +54,21 @@ struct Cell{T}
     edge_lengths::Array{T}
 end
 
-function make_bcc_unitcell(elements::Array{String},a::T,el2atom_map::Dict{String}) where T <:Real
+function make_unitcell(elements::Array{String},a::T,el2atom_map::Dict{String},basis_info::String) where T <:Real
     cc = CartesianCoords(Float32)
     box = PrimitiveVectors(cc, A₁=[a; 0; 0], A₂=[0; a; 0], A₃=[0; 0; a])
-    basis = get_basis_vectors("bcc")
+    basis = get_basis_vectors(basis_info)
     coords = [box.M * transpose(b) for b in basis]
 
-    @assert length(elements) == length(coords) "This function generates a fcc unit cell with $(length(coords)) atoms, so 4 strings are required but got $(elements)"
+    @assert length(elements) == length(coords) "This function generates a $(basis_info) unit cell with $(length(coords)) atoms, so 4 strings are required but got $(elements)"
     atoms = [el2atom_map[el] for el in elements]
     edge_lengths = [norm(box.x), norm(box.y), norm(box.z)]
     
     return Cell{Float32}(atoms, coords, box, edge_lengths)
 end
+
+make_bcc_unitcell(elements::Array{String},a::T,el2atom_map::Dict{String}) where T<:Real = make_unitcell(elements,a,el2atom_map,"bcc")
+make_fcc_unitcell(elements::Array{String},a::T,el2atom_map::Dict{String}) where T<:Real = make_unitcell(elements,a,el2atom_map,"fcc")
 
 function add_vacancies(c::Cell; ixs::Array{I}=[1], random::Bool=false, n_vac::I=1) where {I <: Integer}
     # if `random=true` then `n_vac` are generated and `ixs` is ignored
