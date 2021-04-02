@@ -75,12 +75,12 @@ uuid = "a8cc5b0e-0ffa-5ad4-8c14-923d3ee1735f"
 version = "4.0.4"
 
 [[Crystal]]
-deps = ["DataFrames", "FFMPEG", "LaTeXStrings", "LinearAlgebra", "Plots", "Random", "SparseArrays", "Test"]
-git-tree-sha1 = "0b9b9820eaf4a5c06791edd1a9dd596a01e314c2"
+deps = ["LinearAlgebra", "Random"]
+git-tree-sha1 = "7a8a1c69c01bb0dca97a3375e7541436e51d3589"
 repo-rev = "master"
-repo-url = "https://github.com/eschmidt42/crystal"
+repo-url = ".."
 uuid = "3c6eccdf-2a89-4c24-a1d4-ff210daa8476"
-version = "0.1.0"
+version = "0.1.1"
 
 [[DataAPI]]
 git-tree-sha1 = "dfb3b7e89e395be1e25c2ad6d7690dc29cc53b1d"
