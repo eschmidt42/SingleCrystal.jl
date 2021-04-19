@@ -2,8 +2,9 @@ using Crystal
 using Test
 using LinearAlgebra
 using DataFrames
+using JSON
 
-@testset "unit cell->super cell->vacancy" begin
+@testset "fcc/bcc unit cell->super cell->vacancy" begin
     element = "Fe"
     mass = 42.
     el2atom_map = Dict(element => Crystal.Atom(name=element, mass=mass))
@@ -11,20 +12,21 @@ using DataFrames
     nx, ny, nz = 2, 3, 4
     for b in ["fcc", "bcc"]
         if b == "fcc"
-            elements = [element for _ in 1:4]
+            unitcell = Crystal.make_fcc_unitcell(element, a)
+            num = 4
         elseif b == "bcc"
-            elements = [element for _ in 1:2]
+            unitcell = Crystal.make_bcc_unitcell(element, a)
+            num = 2
         end
         @testset "$(b)" begin
             
-            unitcell = Crystal.make_unitcell(elements, a, el2atom_map, b)
             @testset "unitcell: box" begin
                 @test unitcell.box.M ≈ a*I(3)
                 @test unitcell.edge_lengths ≈ a*ones(3)
             end
-            @testset "unitcell: coords & atoms" begin
-                @test length(unitcell.coords) == length(unitcell.atoms)
-                @test length(unitcell.coords) == length(elements)
+            @testset "unitcell: positions & atoms" begin
+                @test length(unitcell.positions) == length(unitcell.atoms)
+                @test length(unitcell.positions) == num
             end
 
             supercell = Crystal.make_supercell(unitcell, nx=nx, ny=ny, nz=nz)
@@ -33,14 +35,14 @@ using DataFrames
                 @test supercell.box.M[2,2] ≈ ny * unitcell.box.M[2,2]
                 @test supercell.box.M[3,3] ≈ nz * unitcell.box.M[3,3]
             end
-            @testset "supercell: coords & atoms" begin
-                @test length(supercell.coords) == length(supercell.atoms)
-                @test length(supercell.coords) == length(elements)*2*3*4
+            @testset "supercell: positions & atoms" begin
+                @test length(supercell.positions) == length(supercell.atoms)
+                @test length(supercell.positions) == num*2*3*4
             end
             
             @testset "vacancy" begin
                 vac = Crystal.add_vacancies(supercell, ixs=[1])
-                @test length(vac.coords) == length(supercell.coords) - 1
+                @test length(vac.positions) == length(supercell.positions) - 1
             end
         end
     end
@@ -57,14 +59,14 @@ NeighbourFinder(nb_matrix, dist_cutoff) = NeighbourFinder{typeof(dist_cutoff)}(n
 function find_neighbours(cell::Crystal.Cell, nf::NeighbourFinder)
     neighbours = []
     rs = []
-    for i in 1:length(cell.coords)
-        ci = cell.coords[i]
-        for j in 1:length(cell.coords)
+    for i in 1:length(cell.positions)
+        ci = cell.positions[i]
+        for j in 1:length(cell.positions)
             if i==j 
                 continue
             end
             
-            r2 = sum(abs2, Crystal.vector(ci, cell.coords[j], cell.edge_lengths))
+            r2 = sum(abs2, Crystal.vector(ci, cell.positions[j], cell.edge_lengths))
             if r2 <= nf.rcut2 && nf.nb_matrix[j,i]
                 push!(neighbours, (i,j))
                 push!(rs, sqrt(r2))
@@ -91,7 +93,7 @@ end
     el2atom_map = Dict(el => Crystal.Atom(name=el, mass=1))
 
     @testset "bcc" begin
-        unitcell = Crystal.make_bcc_unitcell([el for _ in 1:2], 1., el2atom_map)
+        unitcell = Crystal.make_bcc_unitcell(el, 1.,)
         supercell = Crystal.make_supercell(unitcell, nx=3, ny=3, nz=3)
         rs_df, rs = get_distance_df(supercell, dist_cutoff=d)
         @test rs_df.distances[1] ≈ sqrt((sqrt(2)/2)^2 + 1/2^2)
@@ -102,7 +104,7 @@ end
     end
 
     @testset "fcc" begin
-        unitcell = Crystal.make_fcc_unitcell([el for _ in 1:4], 1., el2atom_map)
+        unitcell = Crystal.make_fcc_unitcell(el, 1.)
         supercell = Crystal.make_supercell(unitcell, nx=3, ny=3, nz=3)
         rs_df, rs = get_distance_df(supercell, dist_cutoff=d)
         @test rs_df.distances[1] ≈ sqrt(1^2+1^2)/2
@@ -113,130 +115,112 @@ end
     end
 end
 
-
-# sanity check first, second and higher nearest neighbours for edge lengths = 1
-
-#=
-masses = Dict("V" => 50.9415, "Nb" => 92.9064, "Ta" => 180.9479,
-              "Cr" => 51.996, "Mo" => 95.94, "W" => 183.85,
-              "Fe" => 55.847)
-
-mutable struct MinimalSimulationConfig
-    atoms::Array
-    box_size::Float32
-    coords::Array
-    neighbours::Array{Tuple{Int64,Int64}}
-end
-
-struct NeighbourFinder 
-    nb_matrix::BitArray{2} # defines which atom pairs we'll be happy to check at all
-    n_steps::Int
-    dist_cutoff::Float32
-    rcut2::Float32
-end
-
-NeighbourFinder(nb_matrix, n_steps, dist_cutoff) = NeighbourFinder(nb_matrix, n_steps, dist_cutoff, dist_cutoff^2)
-
-
-function simple_find_neighbours(s::MinimalSimulationConfig,
-        nf::NeighbourFinder, step_n::Int;
-        parallel::Bool=false, 
-        x_shifts=[0], y_shifts=[0], z_shifts=[0] # factors by which the box will be shifted along each box vector
+crystal_specs = Dict(
+    # NaCl structure
+    "NaCl" => Dict(
+        "symbols" => ["Na", "Cl"],
+        "basis" => [[0. 0. 0.], [.5 .5 .5]], # scaled coordinates
+        "nr" => 225,
+        "setting" => 1,
+        "a_direction" => [1.; 0.; 0.],
+        "ab_normal" => [0.; 0.; 1.],
+        "cellpar" => [5.64, 5.64, 5.64, 90, 90, 90]
+    ),
+    # Al fcc structure
+    "Al_fcc" => Dict(
+        "symbols" => ["Al"],
+        "basis" => [[0. 0. 0.],], # scaled coordinates
+        "nr" => 225,
+        "setting" => 1,
+        "a_direction" => [1.; 0.; 0.],
+        "ab_normal" => [0.; 0.; 1.],
+        "cellpar" => [4.05, 4.05, 4.05, 90, 90, 90]
+    ),
+    # Fe bcc structure
+    "Fe_bcc" => Dict(
+        "symbols" => ["Fe"],
+        "basis" => [[0. 0. 0.],], # scaled coordinates
+        "nr" => 229,
+        "setting" => 1,
+        "a_direction" => [1.; 0.; 0.],
+        "ab_normal" => [0.; 0.; 1.],
+        "cellpar" => [2.87, 2.87, 2.87, 90, 90, 90]
+    ),
+    # Mg hcp structure
+    "Mg_hcp" => Dict(
+        "symbols" => ["Mg"],
+        "basis" => [[1/3 2/3 3/4],], # scaled coordinates
+        "nr" => 194,
+        "setting" => 1,
+        "a_direction" => [1.; 0.; 0.],
+        "ab_normal" => [0.; 0.; 1.],
+        "cellpar" => [3.21, 3.21, 5.21, 90, 90, 120]
+    ),
+    # Diamond structure
+    "Diamond" => Dict(
+        "symbols" => ["C"],
+        "basis" => [[0. 0. 0.],], # scaled coordinates
+        "nr" => 227,
+        "setting" => 1,
+        "a_direction" => [1.; 0.; 0.],
+        "ab_normal" => [0.; 0.; 1.],
+        "cellpar" => [3.57, 3.57, 3.57, 90, 90, 90]
+    ),
+    # Rutile structure
+    "Rutile" => Dict(
+        "symbols" => ["Ti", "O"],
+        "basis" => [[0. 0. 0.], [.3 .3 0.]], # scaled coordinates
+        "nr" => 136,
+        "setting" => 1,
+        "a_direction" => [1.; 0.; 0.],
+        "ab_normal" => [0.; 0.; 1.],
+        "cellpar" => [4.6, 4.6, 2.95, 90, 90, 90]
+    ),
+    # CoSb3 skudderudite
+    "Skudderudite" => Dict(
+        "symbols" => ["Co", "Sb"],
+        "basis" => [[.25 .25 .25], [0. .335 .158]], # scaled coordinates
+        "nr" => 204,
+        "setting" => 1,
+        "a_direction" => [1.; 0.; 0.],
+        "ab_normal" => [0.; 0.; 1.],
+        "cellpar" => [9.04, 9.04, 9.04, 90, 90, 90]
     )
+)
+
+function positions_match_ase(crystal::Crystal.Cell, ase_crystal::Dict)
+    return all([p0 ≈ p1 for (p0,p1) in zip(ase_crystal["positions"],crystal.positions)])
+end
+
+function cell_matches_ase(crystal::Crystal.Cell, ase_crystal::Dict)
+    return crystal.box.M ≈ ase_crystal["cell"]
+end
+
+@testset "various single crystals" begin
+
+    json_ase_crystals = Crystal.load_refs()
+
+    for name in keys(crystal_specs)
+        @testset "$(name)" begin
+            nr = crystal_specs[name]["nr"]
+            setting = crystal_specs[name]["setting"]
+            basis = crystal_specs[name]["basis"]
+            symbols = crystal_specs[name]["symbols"]
+            a_direction = crystal_specs[name]["a_direction"]
+            ab_normal = crystal_specs[name]["ab_normal"]
+            cellpar = crystal_specs[name]["cellpar"]
     
-    !iszero(step_n % nf.n_steps) && return
-    neighbours = empty(s.neighbours)
-    for i in 1:length(s.coords)
-        ci = s.coords[i]
-        for j in 1:length(s.coords)
-            if i==j 
-                continue
-            end
+            crystal = Crystal.make_unitcell(basis, symbols, nr, setting, cellpar,
+                                   a_direction=a_direction, ab_normal=ab_normal)
             
-            r2 = sum(abs2, vector(ci, s.coords[j], s.box_size))
-            if r2 <= nf.rcut2 && nf.nb_matrix[j,i]
-                push!(neighbours, (i,j))
-            end                
+            ase_crystal = Crystal.parse_json_crystal(json_ase_crystals[name])
+            
+            @testset "positions match" begin 
+                @test positions_match_ase(crystal, ase_crystal)
+            end
+            @testset "cell match" begin
+                @test cell_matches_ase(crystal, ase_crystal)
+            end
         end
     end
-    return neighbours
 end
-
-function get_distance_df(atoms, box_size, coords; 
-        initial_neighbours=Tuple{Int,Int}[],
-        dist_cutoff=2
-    )
-    s = MinimalSimulationConfig(atoms, box_size, coords, initial_neighbours)
-    n_atoms = length(atoms)
-    nb_matrix = trues(n_atoms,n_atoms)
-    n_steps = 1
-    nf = NeighbourFinder(nb_matrix, n_steps, dist_cutoff)
-    idxs = simple_find_neighbours(s, nf, 1)
-    rs = [sqrt(sum(abs2, vector(s.coords[i], s.coords[j], s.box_size)))
-        for (i,j) in idxs
-    ]
-    rs_df = sort(combine(groupby(DataFrame("distances"=>rs),[:distances]), 
-    nrow=>:count), [:distances])
-    return rs_df, rs
-end
-
-function plot_distance_hist(rs::Array, title::String, cutoff)
-    histogram(rs, xlabel=L"r", ylabel="Frequency", 
-        title=string(title, ": euclidan (periodic) distance distribution (rcut ",cutoff,")"),
-        bins=200,
-    )
-end
-
-end # module
-
-@testset "vacancy" begin
-    el = "Fe"
-    a = 1
-    el2atom_map = Dict(el => Crystal.Atom(name=el, mass=masses[el]))
-    elements = [el for _ in 1:4]
-    atoms, coords, box, box_size, box_vectors = Crystal.make_fcc_unitcell(elements, a=a, el2atom_map=el2atom_map)
-    vac_atoms, vac_coords = Crystal.add_vacancies(atoms, coords, ixs=[1])
-    @test length(vac_atoms) == length(vac_coords)
-    @test length(vac_atoms) == length(atoms) - 1
-end
-
-@testset "fcc" begin
-    el = "Fe"
-    a = 1
-    el2atom_map = Dict(el => Crystal.Atom(name=el, mass=masses[el]))
-    elements = [el for _ in 1:4]
-    atoms, coords, box, box_size, box_vectors = Crystal.make_fcc_unitcell(elements, a=a, el2atom_map=el2atom_map)
-    
-    sc_atoms, sc_coords, sc_box, sc_box_size = Crystal.make_supercell(atoms, coords, box, box_size, nx=3, ny=3,
-        nz=3);
-    @test length(sc_atoms) == length(sc_coords)
-    
-    dist_cutoff = 2
-    rs_df, rs = Crystal.get_distance_df(sc_atoms, sc_box_size[1,1], sc_coords, dist_cutoff=dist_cutoff)
-    @test rs_df.distances[1] ≈ sqrt(1^2+1^2)/2
-    @test rs_df.distances[2] ≈ 1
-    @test rs_df.distances[3] ≈ sqrt(1^2+(sqrt(2)/2)^2)
-    @test rs_df.distances[4] ≈ sqrt(1^2+1^2)
-    @test rs_df.distances[5] ≈ sqrt(3^2+1^2)/2
-end
-
-@testset "bcc" begin
-    el = "Fe"
-    a = 1
-    el2atom_map = Dict(el => Crystal.Atom(name=el, mass=masses[el]))
-    elements = [el for _ in 1:2]
-    atoms, coords, box, box_size, box_vectors = Crystal.make_bcc_unitcell(elements, a=a, el2atom_map=el2atom_map)
-    
-    sc_atoms, sc_coords, sc_box, sc_box_size = Crystal.make_supercell(atoms, coords, box, box_size, nx=3, ny=3,
-        nz=3);
-    @test length(sc_atoms) == length(sc_coords)
-    
-    dist_cutoff = 2
-    rs_df, rs = Crystal.get_distance_df(sc_atoms, sc_box_size[1,1], sc_coords, dist_cutoff=dist_cutoff)
-    @test rs_df.distances[1] ≈ sqrt((sqrt(2)/2)^2 + 1/2^2)
-    @test rs_df.distances[2] ≈ 1
-    @test rs_df.distances[3] ≈ sqrt(2)
-    @test rs_df.distances[4] ≈ sqrt((sqrt(2)/2)^2 + (3/2)^2)
-    @test rs_df.distances[5] ≈ sqrt(sqrt(2)^2 + 1^2)
-end
-=#
