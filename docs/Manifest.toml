@@ -75,8 +75,8 @@ uuid = "a8cc5b0e-0ffa-5ad4-8c14-923d3ee1735f"
 version = "4.0.4"
 
 [[Crystal]]
-deps = ["LinearAlgebra", "Random"]
-git-tree-sha1 = "da2a77d53648232c088d969a69c2f9aaf0889ec6"
+deps = ["JSON", "LinearAlgebra", "Random"]
+git-tree-sha1 = "c703ab21f7cfb0f620365195dacf2c99a82dc8d3"
 repo-rev = "master"
 repo-url = "https://github.com/eschmidt42/Crystal.jl"
 uuid = "3c6eccdf-2a89-4c24-a1d4-ff210daa8476"
