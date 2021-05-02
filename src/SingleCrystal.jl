@@ -402,7 +402,7 @@ function make_unitcell(basis, symbols, nr, setting, cellpar;
     abc = get_cell_vectors(cellpar)
     cell = abc * xyz
 
-    # storing crystal properties in a `Crystal.Cell` instance
+    # storing crystal properties in a `SingleCrystal.Cell` instance
     el2atom_map = Dict(el => atom_cb(el, masses[el]) for el in symbols)
 
     cc = CartesianCoords(Float64)
@@ -510,7 +510,7 @@ function parse_json_crystal(json_ase_crystal::Dict{String,Any})
     return ase_crystal
 end
 
-function cell2dict(crystal::Crystal.Cell)
+function cell2dict(crystal::SingleCrystal.Cell)
 
     chemical_symbols, atomic_numbers, masses = get_chemical_info()
 

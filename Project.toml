@@ -1,4 +1,4 @@
-name = "Crystal"
+name = "SingleCrystal"
 uuid = "3c6eccdf-2a89-4c24-a1d4-ff210daa8476"
 authors = ["eschmidt42 <11818904+eschmidt42@users.noreply.github.com>"]
 version = "0.1.1"
