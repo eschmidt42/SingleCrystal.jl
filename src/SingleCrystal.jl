@@ -1,4 +1,4 @@
-module Crystal
+module SingleCrystal
 
 using LinearAlgebra
 using JSON
