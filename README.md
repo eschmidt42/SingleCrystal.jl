@@ -51,6 +51,7 @@ using Molly
 using SingleCrystal
 
 fs_inter, elements, masses, bcc_lattice_constants, reference_energies = Molly.get_finnissinclair1984(true)
+make_atom(name,mass) = Atom(name=name,mass=mass)
 
 # setting up the crystal
 nx = 3
@@ -97,3 +98,5 @@ s = Simulation(
 # running the simulation
 simulate!(s) 
 ```
+
+Happy crystal synthesizing! 😃
