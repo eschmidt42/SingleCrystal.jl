@@ -1,23 +1,99 @@
-# Crystal.jl
+# SingleCrystal.jl
 
-This package contains functionality to create body centered cubic and face centered cubic crystal, both of which are very common structures in metals ([💡 wiki 💡](https://en.wikipedia.org/wiki/Cubic_crystal_system)).
-
-When writing this my main objective was to create input for **[Molly.jl](https://github.com/JuliaMolSim/Molly.jl)**, a molecular dynamics simulations package. If you don't know about it yet, I highly recommend to check it out! 😁 
+With this package you can create crystalline single crystal structures. The implementation is based on the Python [**ase**](https://gitlab.com/ase/ase) package.
 
 ## Installation
 
 To install, open your Julia REPL and enter
 ```Julia
 import Pkg
-Pkg.add("https://github.com/eschmidt42/Crystal.jl")
+Pkg.add("https://github.com/eschmidt42/SingleCrystal.jl#master")
 ```
 
-or alternatively via the package manager (enter in the REPL via `]`) and type `add https://github.com/eschmidt42/Crystal.jl`.
+or alternatively via the package manager (enter in the REPL via `]`) and type `add https://github.com/eschmidt42/SingleCrystal.jl#master`.
 
 ## Usage
 
-`docs/crystal.ipynb` describes how to use this package, going from the creation of a unit cell to the 3d animation of a supercell with a vacancy (missing atom).
+Let's say you want to create a body centered cubic (bcc) unit cell ([💡 wiki 💡](https://en.wikipedia.org/wiki/Cubic_crystal_system)). The general approach to create it or any other crystal's unit cell would be as follows:
 
-To run this notebook you'll need the acompanying `docs/Project.toml` and `docs/Manifest.toml` files. In case you download this package just `cd` into `docs` using Jupyter and execute the notebook one cell at a time. 
+```Julia
+symbols = ["Fe"] # chemical elements
+basis = [[0. 0. 0.],] # scaled coordinates
+nr = 229 # space group
+setting = 1 # space group settig (greetings from ase)
+cellpar = [2.87, 2.87, 2.87, 90, 90, 90]; # specification of the 3 cell vector lengths (in Å = 10⁻¹⁰m) a, b, c and three angles (in degrees) α, β, γ
 
-You may notice that the notebook uses additional packages, which are not required for functions of `Crystal.jl` itself, like `DataFrames`. Those packages help to visualize the results.   
+crystal = SingleCrystal.make_unitcell(basis, symbols, nr, setting, cellpar)
+```
+
+For the case of bcc unit cells, you could alternatively also use the less verbose path via the `make_bcc_unitcell` convenience function:
+
+```Julia
+crystal = SingleCrystal.make_bcc_unitcell("Fe", 3.4)
+```
+
+In case you want to replicate the unit cell along the cell vectors to create a supercell, you can use `make_supercell`:
+
+```Julia
+supercell = SingleCrystal.make_supercell(crystal, nx=3, ny=3, nz=3);
+```
+
+For more examples, and a peek behind the curtains of the ase algorithm implemented in this package, I encourage you to check out `docs/singl_crystals_in_julia.ipynb`. There you can also find the above examples in context and find how to create a vacancy \*spoiler\*.
+
+## Motivation
+
+The main objective for this package is to prepare input required for the Molecular Dynamics package **[Molly.jl](https://github.com/JuliaMolSim/Molly.jl)**, to simulate body centered cubic single crystals. 
+
+A minimal example for the usage of SingleCrystal.jl with Molly.jl (based on the Finnis-Sinclair potential type, which is currently under review):
+
+```Julia
+using Molly
+using SingleCrystal
+
+fs_inter, elements, masses, bcc_lattice_constants, reference_energies = Molly.get_finnissinclair1984(true)
+
+# setting up the crystal
+nx = 3
+ny = 3
+nz = 3
+element = "Fe"
+
+a = bcc_lattice_constants[element]
+crystal = SingleCrystal.make_bcc_unitcell(element, a, make_atom)
+supercell = SingleCrystal.make_supercell(crystal, nx=nx, ny=ny, nz=nz)
+
+# setting up the simulation
+T = 100. # Kelvin
+T = T*fs_inter.kb
+n_steps = 2500
+dt = .002 # ps; ns = 1e-9s, ps = 1e-12s, fs = 1e-15s
+n_atoms = length(supercell.atoms)
+general_inters = (fs_inter,)
+velocities = [velocity(supercell.atoms[i].mass, T, dims=3) for i in 1:n_atoms]
+nb_matrix = trues(n_atoms,n_atoms)
+dist_cutoff = 2 * a
+nf = DistanceNeighbourFinder(nb_matrix, 1, dist_cutoff)
+thermostat = NoThermostat()
+
+loggers = Dict(
+    "temperature" => TemperatureLogger(1),
+    "pot" => EnergyLogger(1),
+)
+
+s = Simulation(
+    simulator=VelocityVerlet(), 
+    atoms=supercell.atoms, 
+    general_inters=general_inters,
+    coords=[SVector{3}(v) for v in supercell.positions], 
+    velocities=velocities,
+    temperature=T, 
+    box_size=supercell.edge_lengths[1],
+    timestep=dt,
+    n_steps=n_steps,
+    neighbour_finder=nf,
+    loggers=loggers,
+)
+
+# running the simulation
+simulate!(s) 
+```
