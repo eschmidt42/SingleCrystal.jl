@@ -1,6 +1,6 @@
 # SingleCrystal.jl
 
-With this package you can create crystalline single crystal structures. The implementation is based on the Python [**ase**](https://gitlab.com/ase/ase) package.
+With this package you can create single crystal structures. The implementation is based on the Python [**ase**](https://gitlab.com/ase/ase) package.
 
 ## Installation
 
@@ -40,13 +40,18 @@ supercell = SingleCrystal.make_supercell(crystal, nx=3, ny=3, nz=3);
 
 For more examples, and a peek behind the curtains of the ase algorithm implemented in this package, I encourage you to check out `docs/singl_crystals_in_julia.ipynb`. There you can also find the above examples in context and find how to create a vacancy \*spoiler\*.
 
+Happy crystal synthesizing! 😃
+
 ## Motivation
 
 The main objective for this package is to prepare input required for the Molecular Dynamics package **[Molly.jl](https://github.com/JuliaMolSim/Molly.jl)**, to simulate body centered cubic single crystals. 
 
-A minimal example for the usage of SingleCrystal.jl with Molly.jl (based on the Finnis-Sinclair potential type, which is currently under review):
+A minimal working example for the usage of SingleCrystal.jl with Molly.jl (based on a fork of Molly.jl adding the Finnis-Sinclair potential type - a pull request of the fork is currently [under review](https://github.com/JuliaMolSim/Molly.jl/pull/32)):
 
 ```Julia
+import Pkg
+Pkg.activate(".") # if you are in the root of the forked Molly.jl package
+
 using Molly
 using SingleCrystal
 
@@ -99,4 +104,11 @@ s = Simulation(
 simulate!(s) 
 ```
 
-Happy crystal synthesizing! 😃
+## To dos
+
+1. Add more crystal structures to test beyond those in the ase gallery
+2. Test how the performance / resource requirements scale with crystal size / number of atoms
+
+## Contributing
+
+Contributions are very welcome. 
